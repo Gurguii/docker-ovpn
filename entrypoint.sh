@@ -1,14 +1,20 @@
 #!/bin/bash
 
-# List of openvpn instances' PID's
-pidlist=()
+# BEG - Environment variables
+
+# MAX_VPN_INSTANCES - maximum allowed instances to be executed, default 2
+# CREATE_TEST_PKI   - create a PKI for testing purposes on first run, default true
+
+# END - Environment variables
+
+pidlist=() # List of openvpn instances' PID's
 
 function __ctrl_c_handler(){
     printf -- "Cleaning up before exiting...\n"
 
     for id in "${pidlist[@]}"; do
-        kill "$id"
-        wait "$id"
+        kill "$id" &>/dev/null
+        wait "$id" &>/dev/null
     done
 }
 
@@ -22,7 +28,7 @@ function set_TUN(){
         return 1
     fi
     
-    # Create the TUN device if it hasn't been created (on first run)
+    # Create the TUN device if it hasn't been created
     if [ ! -e /dev/net/tun ]; then
     	mknod /dev/net/tun c 10 200
     	if [[ $? -ne 0 ]]; then
@@ -32,7 +38,6 @@ function set_TUN(){
     fi
 
     # Set permissions on the TUN device
-    
     if ! chmod 600 /dev/net/tun; then
         printf -- "-- Failed to set permissions on /dev/net/tun\n"
         return 1
@@ -55,10 +60,14 @@ function start_OpenVPN(){
     
     if [ ${#OpenVPNInstances[@]} -eq 0 ]; then
         printf -- "-- No server configuration files found in /etc/openvpn/config\n"
-        return 1 # Exit with error code    
+        return 1
     fi
 
-    # TODO - Add ENV VAR indicating default maximum allowed instances e.g 2, allowing user modifying it with 'docker run -e MAX_VPN_INSTANCES=<Number>'
+    if (( "${#OpenVPNInstances[@]}" > $MAX_VPN_INSTANCES )); then
+        printf -- "-- Configuration files (%i) exceed allowed vpn instances (%i), add '-e MAX_VPN_INSTANCES=<NUMBER>' to change it\n" "${#OpenVPNInstances[@]}" "$MAX_VPN_INSTANCES"
+        return 1
+    fi
+
     printf -- "-- Starting %i OpenVPN instances ...\n" "${#OpenVPNInstances[@]}"
     
     for config in "${OpenVPNInstances[@]}"; do
@@ -75,16 +84,16 @@ function start_OpenVPN(){
             return $exit_status  # Return the exit status of the OpenVPN command
         fi
 
-        local listen_ip="$(grep "listen" $path | cut -d' ' -f2)"
-        local listen_port="$(grep "port" $path | cut -d' ' -f2)"
+        local listen_ip="$(grep -Ev '^#' $path | grep "listen" | cut -d' ' -f2)"
+        local listen_port="$(grep -Ev '^#' $path | grep "port" | cut -d' ' -f2)"
 
-        if [ -z $listen_ip ]; then
+        if [[ -z $listen_ip || $listen_ip~=^# ]]; then
             listen_ip="0.0.0.0"
         fi
 
         pidlist+=($pid)
 
-        printf -- "-- OpenVPN instance started\n\tFilename: %s\n\tListen: %s:%i\n\tPID: %i\n" "$config" "$listen_ip" "$listen_port" "$pid"    
+        printf -- "-- OpenVPN instance started\n\tFilename: %s\n\tListen: %s:%i\n\tPID: %i\n" "$config" "$slisten_ip" "$listen_port" "$pid"    
     done
 
     for process in $pidlist; do
@@ -94,10 +103,37 @@ function start_OpenVPN(){
     printf -- "-- All instances finished, exiting ...\n"
 }
 
+function create_test_PKI(){
+    # Create profile + dhparam
+    echo -e "y\nn\n" | gpkih init -n test -s ~/test
+    # Create CA
+    gpkih add test -t ca -cn CA
+    # Create SV
+    gpkih add test -t sv -cn SV -y
+    # Create CL
+    gpkih add test -t cl -cn CL -y
+    # Add dhparam to server inline config
+    cat << EOF >> ~/test/packs/SV/inline_SV.conf
+<dh>
+$(cat ~/test/pki/tls/dhparam4096)
+</dh>
+EOF
+    # Add the new config to /etc/openvpn/config
+    cp ~/test/packs/SV/inline_SV.conf /etc/openvpn/config/
+}
+
 function main()
 {
     trap SIGINT # clear SIGINT handlers
     trap __ctrl_c_handler SIGINT
+
+    if [ ! -e "/.first_run" ]; then
+        touch "/.first_run"
+        if $CREATE_TEST_PKI; then
+            printf -- "-- Creating test PKI\n"
+            create_test_PKI
+        fi
+    fi
 
     start_OpenVPN
 }

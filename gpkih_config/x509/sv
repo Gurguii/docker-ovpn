@@ -1,0 +1,5 @@
+basicConstraints        = CA:FALSE
+extendedKeyUsage        = serverAuth
+keyUsage                = digitalSignature, keyEncipherment, nonRepudiation
+subjectKeyIdentifier    = hash
+authorityKeyIdentifier  = keyid:always,issuer:always
