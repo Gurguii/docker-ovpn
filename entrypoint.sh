@@ -55,11 +55,11 @@ function start_OpenVPN(){
         return $?
     fi
 
-    # Check server instances to launch
-    OpenVPNInstances=($(ls /etc/openvpn/config))
+    # Check server instances to launch (file must have .ovpn extension)
+    OpenVPNInstances=($(ls /etc/openvpn/config | grep -E '\.(ovpn|conf)$'))
     
     if [ ${#OpenVPNInstances[@]} -eq 0 ]; then
-        printf -- "-- No server configuration files found in /etc/openvpn/config\n"
+        printf -- "-- No suitable server configuration files found in /etc/openvpn/config\n"
         return 1
     fi
 
@@ -77,6 +77,7 @@ function start_OpenVPN(){
 
         local pid=$!
         local exit_status=$?
+        local filenameWithoutExt=$(cut -d. -f2 <<< $config)
 
         if [[ $exit_status -ne 0 ]]; then
             printf -- "-- Failed starting OpenVPN instance\n"
@@ -87,13 +88,13 @@ function start_OpenVPN(){
         local listen_ip="$(grep -Ev '^#' $path | grep "listen" | cut -d' ' -f2)"
         local listen_port="$(grep -Ev '^#' $path | grep "port" | cut -d' ' -f2)"
 
-        if [[ -z $listen_ip || $listen_ip~=^# ]]; then
+        if [ -z $listen_ip ]; then
             listen_ip="0.0.0.0"
         fi
 
         pidlist+=($pid)
 
-        printf -- "-- OpenVPN instance started\n\tFilename: %s\n\tListen: %s:%i\n\tPID: %i\n" "$config" "$slisten_ip" "$listen_port" "$pid"    
+        printf -- "-- OpenVPN instance started\n\tFilename: %s\n\tListen: %s:%i\n\tPID: %i\n" "$config" "$listen_ip" "$listen_port" "$pid"    
     done
 
     for process in $pidlist; do
@@ -106,12 +107,22 @@ function start_OpenVPN(){
 function create_test_PKI(){
     # Create profile + dhparam
     echo -e "y\nn\n" | gpkih init -n test -s ~/test
+    
     # Create CA
-    gpkih add test -t ca -cn CA
+    if ! gpkih add test -t ca -cn CA; then
+        printf -- "-- Creating CA failed\n"
+    fi
+    
     # Create SV
-    gpkih add test -t sv -cn SV -y
+    if ! gpkih add test -t sv -cn SV -y; then
+        printf -- "-- Creating SERVER failed\n"
+    fi
+
     # Create CL
-    gpkih add test -t cl -cn CL -y
+    if ! gpkih add test -t cl -cn CL -y; then
+        printf -- "-- Creating CLIENT failed\n"
+    fi
+    
     # Add dhparam to server inline config
     cat << EOF >> ~/test/packs/SV/inline_SV.conf
 <dh>
