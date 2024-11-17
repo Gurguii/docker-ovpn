@@ -8,6 +8,7 @@
 # END - Environment variables
 
 pidlist=() # List of openvpn instances' PID's
+declare -A instances # instance['myServer']="$pid;$status;$log;listen_ip;listen_port;protocol"
 
 function __ctrl_c_handler(){
     printf -- "Cleaning up before exiting...\n"
@@ -47,15 +48,68 @@ function set_TUN(){
     return 0
 }
 
-function start_OpenVPN(){
-    local stdout_logs="/.out.log"
-    local stderr_logs="/.err.log"
+function start_Monitoring() {
+    # ${instance[N]}="$pid;$status;$log;$lip;$lport;$protocol"
 
+    # Initialize maximum widths for each column (default values are column names' length + 2)
+    local max_name_width=6
+    local max_pid_width=5
+    local max_status_width=8
+    local max_log_width=5
+    local max_lip_width=11
+    local max_lport_width=13
+    local max_protocol_width=10
+
+    # First pass: Determine maximum widths
+    for i in "${!instances[@]}"; do
+        local pid="$(cut -d: -f1 <<< "${instances[$i]}")"
+        local status="$(cut -d: -f2 <<< "${instances[$i]}")"
+        local log="$(cut -d: -f3 <<< "${instances[$i]}")"
+        local lip="$(cut -d: -f4 <<< "${instances[$i]}")"
+        local lport="$(cut -d: -f5 <<< "${instances[$i]}")"
+        local protocol="$(cut -d: -f6 <<< "${instances[$i]}")"
+
+        (( ${#i} > max_name_width )) && max_name_width=${#i}
+        (( ${#pid} > max_pid_width )) && max_pid_width=${#pid}
+        (( ${#status} > max_status_width )) && max_status_width=${#status}
+        (( ${#log} > max_log_width )) && max_log_width=${#log}
+        (( ${#lip} > max_lip_width )) && max_lip_width=${#lip}
+        (( ${#lport} > max_lport_width )) && max_lport_width=${#lport}
+        (( ${#protocol} > max_protocol_width )) && max_protocol_width=${#protocol}
+    done
+
+    # Add some padding to the maximum widths
+    max_name_width=$((max_name_width + 2))
+    max_pid_width=$((max_pid_width + 2))
+    max_status_width=$((max_status_width + 2))
+    max_log_width=$((max_log_width + 2))
+    max_lip_width=$((max_lip_width + 2))
+    max_lport_width=$((max_lport_width + 2))
+    max_protocol_width=$((max_protocol_width + 2))
+
+    # Print header
+    printf "%-${max_name_width}s\t%-${max_pid_width}s\t%-${max_status_width}s\t%-${max_log_width}s\t%-${max_lip_width}s\t%-${max_lport_width}s\t%-${max_protocol_width}s\n" "NAME" "PID" "STATUS" "LOG" "LISTEN IP" "LISTEN PORT" "PROTOCOL"
+    printf "%-${max_name_width}s\t%-${max_pid_width}s\t%-${max_status_width}s\t%-${max_log_width}s\t%-${max_lip_width}s\t%-${max_lport_width}s\t%-${max_protocol_width}s\n" "----" "---" "------" "---" "--------" "----------" "--------"
+
+    # Second pass: Print the values
+    for i in "${!instances[@]}"; do
+        local pid="$(cut -d: -f1 <<< "${instances[$i]}")"
+        local status="$(cut -d: -f2 <<< "${instances[$i]}")"
+        local log="$(cut -d: -f3 <<< "${instances[$i]}")"
+        local lip="$(cut -d: -f4 <<< "${instances[$i]}")"
+        local lport="$(cut -d: -f5 <<< "${instances[$i]}")"
+        local protocol="$(cut -d: -f6 <<< "${instances[$i]}")"
+
+        printf "%-${max_name_width}s\t%-${max_pid_width}s\t%-${max_status_width}s\t%-${max_log_width}s\t%-${max_lip_width}s\t%-${max_lport_width}s\t%-${max_protocol_width}s\n" "$i" "$pid" "$status" "$log" "$lip" "$lport" "$protocol"
+    done
+}
+
+function start_OpenVPN(){
     if ! set_TUN; then
         return $?
     fi
 
-    # Check server instances to launch (file must have .ovpn extension)
+    # Check server instances to launch (file must have .ovpn|.conf extension)
     OpenVPNInstances=($(ls /etc/openvpn/config | grep -E '\.(ovpn|conf)$'))
     
     if [ ${#OpenVPNInstances[@]} -eq 0 ]; then
@@ -70,14 +124,21 @@ function start_OpenVPN(){
 
     printf -- "-- Starting %i OpenVPN instances ...\n" "${#OpenVPNInstances[@]}"
     
+    mkdir -p "/etc/openvpn/logs"
+
     for config in "${OpenVPNInstances[@]}"; do
+        local filenameWithoutExt=$(cut -d. -f1 <<< $config)
+        
+        mkdir -p "/etc/openvpn/logs/$filenameWithoutExt"
+
+        local stdout_logs="/etc/openvpn/logs/$filenameWithoutExt/out.log"
+        local stderr_logs="/etc/openvpn/logs/$filenameWithoutExt/err.log"
         local path="/etc/openvpn/config/$config"
 
         openvpn --config "$path" 1>"$stdout_logs" 2>"$stderr_logs" &
 
         local pid=$!
         local exit_status=$?
-        local filenameWithoutExt=$(cut -d. -f2 <<< $config)
 
         if [[ $exit_status -ne 0 ]]; then
             printf -- "-- Failed starting OpenVPN instance\n"
@@ -85,8 +146,8 @@ function start_OpenVPN(){
             return $exit_status  # Return the exit status of the OpenVPN command
         fi
 
-        local listen_ip="$(grep -Ev '^#' $path | grep "listen" | cut -d' ' -f2)"
-        local listen_port="$(grep -Ev '^#' $path | grep "port" | cut -d' ' -f2)"
+        local listen_ip="$(grep -E '^listen' $path | cut -d' ' -f2)"
+        local listen_port="$(grep -E '^port' $path | cut -d' ' -f2)"
 
         if [ -z $listen_ip ]; then
             listen_ip="0.0.0.0"
@@ -94,9 +155,21 @@ function start_OpenVPN(){
 
         pidlist+=($pid)
 
-        printf -- "-- OpenVPN instance started\n\tFilename: %s\n\tListen: %s:%i\n\tPID: %i\n" "$config" "$listen_ip" "$listen_port" "$pid"    
+        local statusValue="$( grep -E '^status ' $path | cut -d' ' -f2)"
+        local logValue="$( grep -E '^log ' $path | cut -d' ' -f2)"
+        local protocol="$( grep -E '^proto ' $path | cut -d' ' -f2)"
+
+        if [ -z "$logValue" ]; then
+            logValue="$(grep -E '^log-append ' $path | cut -d' ' -f2)"
+        fi
+
+        instances[$config]="$pid:$statusValue:$logValue:$listen_ip:$listen_port:$protocol"
+        printf -- "-- OpenVPN instance '%s' started\n" "$config"
+        #printf -- "-- OpenVPN instance started\n\tFilename: %s\n\tListen: %s:%i\n\tPID: %i\n" "$config" "$listen_ip" "$listen_port" "$pid"    
     done
 
+    start_Monitoring 
+    
     for process in $pidlist; do
         wait $process
     done
@@ -106,27 +179,33 @@ function start_OpenVPN(){
 
 function create_test_PKI(){
     # Create profile + dhparam
-    echo -e "y\nn\n" | gpkih init -n test -s ~/test
+    printf -- "-- Initializing test profile\n";
+    echo -e "y\nn\n" | gpkih init -n test -s ~/test &>/dev/null
+    
+    # Set profile's OVPN client status file
+    if ! gpkih set test @vpn.server status="/etc/openvpn/testPKI_client_status.txt" &>/dev/null; then
+        printf -- "-- Setting client status value failed\n"
+    fi
     
     # Create CA
-    if ! gpkih add test -t ca -cn CA; then
+    if ! gpkih add test -t ca -cn CA &>/dev/null; then
         printf -- "-- Creating CA failed\n"
     fi
     
     # Create SV
-    if ! gpkih add test -t sv -cn SV -y; then
+    if ! gpkih add test -t sv -cn SV -y &>/dev/null; then
         printf -- "-- Creating SERVER failed\n"
     fi
 
     # Create CL
-    if ! gpkih add test -t cl -cn CL -y; then
+    if ! gpkih add test -t cl -cn CL -y &>/dev/null; then
         printf -- "-- Creating CLIENT failed\n"
     fi
-    
+
     # Add dhparam to server inline config
     cat << EOF >> ~/test/packs/SV/inline_SV.conf
 <dh>
-$(cat ~/test/pki/tls/dhparam4096)
+$(cat ~/test/pki/tls/dhparam2048)
 </dh>
 EOF
     # Add the new config to /etc/openvpn/config
