@@ -4,6 +4,7 @@
 
 # MAX_VPN_INSTANCES - maximum allowed instances to be executed, default 2
 # CREATE_TEST_PKI   - create a PKI for testing purposes on first run, default true
+# TEST_PKI_REMOTE   - set 'remote' on test pki configuration, ignored if CREATE_TEST_PKI=false, default ""
 
 # END - Environment variables
 
@@ -187,8 +188,14 @@ function create_test_PKI(){
         printf -- "-- Setting client status value failed\n"
     fi
     
-    # Create CA
+    if ! [ -z $TEST_PKI_REMOTE ]; then
+        if ! gpkih set test @vpn.client remote="$TEST_PKI_REMOTE"; then
+            printf -- "-- Setting remote failed\n"
+        fi
+    fi 
+
     if ! gpkih add test -t ca -cn CA &>/dev/null; then
+    # Create CA
         printf -- "-- Creating CA failed\n"
     fi
     
