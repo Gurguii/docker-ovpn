@@ -26,11 +26,11 @@ The only thing left to do is change the client remote with the server's IP and P
 
 Environment variables
 --------
- **Keyword**       | **Value**        | **Default** | **Description**                                  
-:-----------------:|:----------------:|:-----------:|:------------------------------------------------:
- MAX_VPN_INSTANCES | unsigned integer | 2           | Limits the maximum amount of instances to be ran 
- CREATE_TEST_PKI   | boolean          | true        | Creates a test PKI using gpkih on first run      
-
+| Keyword           | Value            | Default | Description                                      |
+|-------------------|------------------|---------|--------------------------------------------------|
+| MAX_VPN_INSTANCES | unsigned integer | 2       | Limits the maximum amount of instances to be ran |
+| CREATE_TEST_PKI   | boolean          | true    | Creates a test PKI using gpkih on first run      |
+| TEST_PKI_REMOTE   | text             | ""      | Sets the clients' remote property                |
 
 Notes
 --------
