@@ -188,11 +188,13 @@ function create_test_PKI(){
         printf -- "-- Setting client status value failed\n"
     fi
     
-    if ! [ -z $TEST_PKI_REMOTE ]; then
-        if ! gpkih set test @vpn.client remote="$TEST_PKI_REMOTE"; then
-            printf -- "-- Setting remote failed\n"
+    # Check VPN_CLIENT_REMOTE ENV value and set if exists
+    if ! [ -z "$VPN_CLIENT_REMOTE" ]; then
+        printf -- "-- Setting clients' remote to %s\n" "$VPN_CLIENT_REMOTE"
+        if ! gpkih set test vpn.client.remote="$VPN_CLIENT_REMOTE"; then
+            printf -- "-- Setting vpn.client.remote failed\n";
         fi
-    fi 
+    fi
 
     if ! gpkih add test -t ca -cn CA &>/dev/null; then
     # Create CA
@@ -208,12 +210,6 @@ function create_test_PKI(){
     if ! gpkih add test -t cl -cn CL -y &>/dev/null; then
         printf -- "-- Creating CLIENT failed\n"
     fi
-
-    # Add dhparam to server inline config
-    cat << EOF >> ~/test/packs/SV/inline_SV.conf
-<dh>
-$(cat ~/test/pki/tls/dhparam2048)
-</dh>
 EOF
     # Add the new config to /etc/openvpn/config
     cp ~/test/packs/SV/inline_SV.conf /etc/openvpn/config/

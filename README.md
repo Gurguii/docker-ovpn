@@ -22,15 +22,18 @@ docker run --name ovpn \
 ```  
 The default profile generated with gpkih will also generate a client inline configuration which can be found at `/root/test/packs/CL/inline_CL.conf`.  
 
-The only thing left to do is change the client remote with the server's IP and PORT and you'll have a ready-to-use client file. Import it in your [OpenVPN Connect Client](https://openvpn.net/client/) and securely connect to the server.
+The only thing left to do is change the client remote with the server's IP and PORT (you can also leave this to the container by setting the env variable VPN_CLIENT_REMOTE with the desired value, e.g "10.10.10.10 1194") and you'll have a ready-to-use client file. Import it in your [OpenVPN Connect Client](https://openvpn.net/client/) and securely connect to the server.
 
 Environment variables
---------
+-------
+
 | Keyword           | Value            | Default | Description                                      |
 |-------------------|------------------|---------|--------------------------------------------------|
 | MAX_VPN_INSTANCES | unsigned integer | 2       | Limits the maximum amount of instances to be ran |
 | CREATE_TEST_PKI   | boolean          | true    | Creates a test PKI using gpkih on first run      |
-| TEST_PKI_REMOTE   | text             | ""      | Sets the clients' remote property                |
+| VPN_CLIENT_REMOTE | text             | ""      | Sets the clients' vpn remote property            |
+
+
 
 Notes
 --------

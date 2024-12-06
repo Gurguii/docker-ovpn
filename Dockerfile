@@ -11,10 +11,14 @@ COPY gpkih_x86-64_alpine /usr/local/bin/gpkih
 
 WORKDIR /
 
-COPY entrypoint.sh entrypoint.sh
+COPY entrypoint.sh entrypoint
 
-RUN chmod +x entrypoint.sh
+RUN chmod +x entrypoint
 
-ENV MAX_VPN_INSTANCES=2 CREATE_TEST_PKI=true
+ENV MAX_VPN_INSTANCES=2  
+ENV CREATE_TEST_PKI=true
+ENV VPN_CLIENT_REMOTE=""
 
-ENTRYPOINT ["./entrypoint.sh"]
+WORKDIR /etc/openvpn
+
+ENTRYPOINT ["/entrypoint"]
